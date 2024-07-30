@@ -6,7 +6,7 @@ from typing import List
 
 from PIL import Image, ImageTk, ImageOps
 
-PRIMITIVE_PATH = '/home/tushar/work/mtp1/workspaces/mandala-python/src/assets/primitives'
+PRIMITIVE_PATH = os.path.dirname(__file__) + '/assets/primitives'
 PRIMITIVE_BUTTON_SIZE = 36
 PRIMITIVE_BUTTON_SIZE_TUPLE = (PRIMITIVE_BUTTON_SIZE,) * 2
 
@@ -84,23 +84,29 @@ class PrimitiveButton(ttk.Button):
 
 
 class AtlasFrame(ttk.Frame):
-  def __init__(self, parent, *, columns: int = 1, primitives: List[Primitive]):
+  def __init__(self, parent, *, columns: int = 1, primitives: List[Primitive] | None = None):
     super().__init__(parent)
+
+    if primitives is None:
+      primitives = []
 
     self._columns = columns
     self._next_position = 0
 
     self._canvas = tkinter.Canvas(self)
-    self._scrollbar = ttk.Scrollbar(self, orient='vertical', command=self._canvas.yview)
+    self._scrollbar_v = ttk.Scrollbar(self, orient='vertical', command=self._canvas.yview)
+    self._scrollbar_h = ttk.Scrollbar(self, orient='horizontal', command=self._canvas.xview)
     self._button_frame = ttk.Frame(self._canvas)
 
-    self._canvas.configure(width=self._columns * PRIMITIVE_BUTTON_SIZE, yscrollcommand=self._scrollbar.set)
+    tentative_width = self._columns * PRIMITIVE_BUTTON_SIZE
+    self._canvas.configure(width=tentative_width, scrollregion=(0, 0, tentative_width, 0), yscrollcommand=self._scrollbar_v.set, xscrollcommand=self._scrollbar_h.set, relief='solid', border=1)
 
     self.rowconfigure(0, weight=1)
     self.columnconfigure(0, weight=1)
 
     self._canvas.grid(row=0, column=0, sticky='nswe')
-    self._scrollbar.grid(row=0, column=1, sticky='ns')
+    self._scrollbar_v.grid(row=0, column=1, sticky='ns')
+    self._scrollbar_h.grid(row=1, column=0, sticky='we')
     self._canvas.create_window(0, 0, anchor='nw', window=self._button_frame)
 
     for primitive in primitives:
@@ -116,6 +122,34 @@ class AtlasFrame(ttk.Frame):
     self._canvas.configure(width=w, scrollregion=(0, 0, w, h))
 
     self._next_position += 1
+
+
+class LeftFrame(ttk.Frame):
+  def __init__(self, parent):
+    super().__init__(parent)
+
+    self._builtin_atlas = ttk.Labelframe(self, text='Built-in Motifs')
+    self._custom_atlas = ttk.Labelframe(self, text='Custom Motifs')
+
+    primitives = discover_primitives(PRIMITIVE_PATH)
+    self._builtin_atlas_frame = AtlasFrame(self._builtin_atlas, columns=8, primitives=primitives)
+    self._builtin_atlas_frame.grid(row=0, column=0, sticky='nswe')
+
+    self._custom_atlas_frame = AtlasFrame(self._custom_atlas, columns=8)
+    self._custom_atlas_frame.grid(row=1, column=0, sticky='nswe')
+
+    self._builtin_atlas.grid(row=0, column=0, sticky='nswe')
+    self._custom_atlas.grid(row=1, column=0, sticky='nswe')
+
+    self._builtin_atlas.rowconfigure(0, weight=1)
+    self._builtin_atlas.columnconfigure(0, weight=1)
+
+    self._custom_atlas.rowconfigure(0, weight=1)
+    self._custom_atlas.columnconfigure(0, weight=1)
+
+    self.rowconfigure(0, weight=1)
+    self.rowconfigure(1, weight=1)
+    self.columnconfigure(0, weight=1)
 
 
 class MandalaCanvas(ttk.Frame):
@@ -198,19 +232,30 @@ def discover_primitives(dirpath):
 def test():
   root = tkinter.Tk()
 
-  content_frame = ttk.Frame(root)
-  content_frame.grid(sticky='nsew')
+  content_frame = ttk.Frame(root, relief='solid', border=5)
+  content_frame.grid(row=0, column=0, sticky='nsew')
 
-  content_frame.rowconfigure(0, weight=1)
-  content_frame.columnconfigure(0, weight=1)
+  left_frame = LeftFrame(content_frame)
+  left_frame.grid(row=0, column=0, rowspan=2, sticky='nswe')
 
-  primitives = discover_primitives(PRIMITIVE_PATH)
+  mandala_canvas = MandalaCanvas(content_frame)
+  mandala_canvas.grid(row=0, column=1, rowspan=2, sticky='nswe')
 
-  atlas_frame = AtlasFrame(content_frame, columns=8, primitives=primitives)
-  atlas_frame.grid(sticky='nswe')
+  dummy_frame_1 = ttk.Labelframe(content_frame, width=200, height=200, text='Used Motifs Go Here')
+  dummy_frame_2 = ttk.Labelframe(content_frame, width=200, height=200, text='Parameters Go Here')
+
+  dummy_frame_1.grid(row=0, column=2, sticky='nswe')
+  dummy_frame_2.grid(row=1, column=2, sticky='nswe')
   
+  content_frame.rowconfigure(0, weight=1)
+  content_frame.rowconfigure(0, weight=1)
+  content_frame.columnconfigure(0, weight=0)
+  content_frame.columnconfigure(1, weight=1)
+  content_frame.columnconfigure(2, weight=0)
+
   root.rowconfigure(0, weight=1)
   root.columnconfigure(0, weight=1)
+
   root.mainloop()
 
 
