@@ -18,7 +18,7 @@ python -m venv .venv
 ```bash
 source .venv/bin/activate
 ```
-Actually, there is no strict need to activate the virtual environment. Just make sure that `python` and `pip` are run by providing the full path to the interpreters located in the `.venv` directory.
+Actually, there is no strict need to activate the virtual environment. Just make sure that `python` is run by providing the full path to the interpreter located in the `.venv` directory.
 
 4. Install the dependencies by running the following command.
 
