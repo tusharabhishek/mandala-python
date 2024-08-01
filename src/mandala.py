@@ -1,4 +1,5 @@
 import glob
+import math
 import os
 import tkinter
 from tkinter import ttk
@@ -6,81 +7,110 @@ from typing import List
 
 from PIL import Image, ImageTk, ImageOps
 
+from primitive import Primitive, discover_primitives
+from uicomponents import PrimitiveButton
+
 PRIMITIVE_PATH = os.path.dirname(__file__) + '/assets/primitives'
 PRIMITIVE_BUTTON_SIZE = 36
 PRIMITIVE_BUTTON_SIZE_TUPLE = (PRIMITIVE_BUTTON_SIZE,) * 2
 
-class Primitive:
-  '''Data structure to represent a primitive in its most basic form.'''
 
-  def __init__(self, image_path: str):
-    '''Create a `primitive` object based on the image located at `image_path`.
-    '''
-    with Image.open(image_path) as image_file:
-      # Copying image (and not just reference) to a persistent variable because
-      # access to the opened image file will be lost on exiting this block.
-      self.image = image_file.copy()
+def rgbToHwb():
+  pass
+
+
+def polarToRect(r: float, theta: float):
+  '''Helper function to convert polar coordinates to rectangular ones.
+
+  `theta` is measured in degrees.
+  '''
+  rad = math.radians(theta)
+  return r * math.cos(rad), r * math.sin(rad)
+
+
+class MandalaGrid:
+  '''Grid that is drawn on the canvas.'''
+
+  def __init__(self, *, color: str = 'cyan', color_bold: str = 'blue', order: int = 3, radial_increment: float = 10, angular_divisions: int = 12):
+    self._color = color
+    self._color_bold = color_bold
+    self._order = order
+    self._radial_increment = radial_increment
+    self._angular_divisions = angular_divisions
+  
+  def draw_on(self, canvas: tkinter.Canvas, width: int, height: int):
+    size = min(width, height)
+
+    center_x, center_y = width / 2, height / 2
+
+    order = self._order
+    major_angles = [-90 + x * 360 / order for x in range(order)]
     
-    # Extract primitive and store it (with transparent background)
-    self.image = Primitive.extract_primitive(self.image)
+    total_angles = order * self._angular_divisions
+    minor_angles = [-90 + x * 360 / (total_angles) for x in range(total_angles)]
+
+    radial_increment = self._radial_increment
+    for r in range(radial_increment, size // 2, radial_increment):
+      canvas.create_oval(center_x - r, center_y - r, center_x + r, center_y + r, width=2, outline=self._color)
+
+    for angle in minor_angles:
+      offset_x, offset_y = polarToRect(size / 2, angle)
+      canvas.create_line(center_x, center_y, center_x + offset_x, center_y + offset_y, width=2, fill=self._color)
+
+    for angle in major_angles:
+      offset_x, offset_y = polarToRect(size / 2, angle)
+      canvas.create_line(center_x, center_y, center_x + offset_x, center_y + offset_y, width=2, fill=self._color_bold)
   
-  def get_image(self):
-    '''Return a copy of the `Image` object associated with this primitive.'''
-    return self.image.copy()
+  def get_info(self):
+    return {
+      'color': self._color,
+      'order': self._order,
+      'radial_increment': self._radial_increment,
+      'angular_divisions': self._angular_divisions
+    }
+
+class MandalaLayer:
+  '''Data structure to represent mandala layer.'''
+
+  def __init__(self, *, primitive: Primitive, order: int, polar_radius: float = 0.5, polar_angle: float = 0, self_rotation: float = 0, size: float = 0.25, multiplicity: int = 1, color: str = 'black'):
+    self._primitive = primitive
+    self._order = order
+    self._polar_radius = polar_radius
+    self._polar_angle = polar_angle
+    self._self_rotation = self_rotation
+    self._size = size
+    self._multiplicity = multiplicity
+    self._color = color
+
+    self._image_data: List[ImageTk.PhotoImage] = []
   
-  def show_image(self):
-    '''**[DEBUG]** Show the `Image` associated with this primitive in an image
-    viewer.
-    '''
-    self.image.show()
-  
-  def extract_primitive(image: Image.Image):
-    '''Extract primitive from the image.
+  def draw_on(self, canvas: tkinter.Canvas, width: int, height: int):
+    self._image_data = []
+
+    image = image=self._primitive.get_image()
+
+    size = min(width, height)
+
+    center_x, center_y = width / 2, height / 2
+
+    num_copies: int
+    if self._multiplicity == 0:
+      num_copies = 1
+    else:
+      num_copies = self._multiplicity * self._order
     
-    Currently, the primitive is assumed to be made up of black pixels,
-    with white pixels assumed to be the background.
-    '''
-    # Mask the image with its inverted copy to add transparency
-    # - whiter pixels are more transparent.
-    # Transparent pixels appear on Tk buttons only when using RGBA images.
-    result_image = Image.new('RGBA', image.size, (0, 0, 0, 0))
-    mask_image = ImageOps.invert(image)
-    result_image.paste(image, mask=mask_image)
-    return result_image
+    angles = [-90 + x * 360 / num_copies for x in range(num_copies)]
+    for angle in angles:
+      final_angle = 90 + angle + self._self_rotation
 
+      image_w, image_h = image.size
+      image_copy = image.copy().resize(size=(math.trunc(image_w * self._size), math.trunc(image_h * self._size))).rotate(-final_angle, expand=True)
+      image_drawn = ImageTk.PhotoImage(image_copy)
+      self._image_data.append(image_drawn)
 
-class PrimitiveButton(ttk.Button):
-  '''Button that adds a layer of its associated primitive to the canvas.'''
-  
-  def __init__(self, parent, *, primitive: Primitive, size: tuple[int, int]):
-    '''Create a button of given `size` (width x height) based on the
-    `primitive` supplied.
-    '''
-    super().__init__(parent)
-
-    image = primitive.get_image()
-    image.thumbnail(size)
-    # Reference to thumbnail shown on the button
-    self.thumbnail = ImageTk.PhotoImage(image)
-    
-    thumbnail_size = (self.thumbnail.width(), self.thumbnail.height())
-    # Padding needed to bring the button to `size`.
-    # Otherwise, the button will only be as large as the thumbnail.
-    padding = PrimitiveButton.get_padding(thumbnail_size, size)
-    
-    self.configure(image=self.thumbnail, padding=padding)
-  
-  def get_padding(thumbnail_size: tuple[int, int],
-                  bounds_size: tuple[int, int]):
-    '''Return a tuple of padding that needs to be added to bring
-    `thumbnail_size` to `bounds_size`.
-    '''
-    x_diff = bounds_size[0] - thumbnail_size[0]
-    y_diff = bounds_size[1] - thumbnail_size[1]
-    half_x, half_y = x_diff // 2, y_diff // 2
-
-    # In order, left, top, right, bottom
-    return (half_x, half_y, x_diff - half_x, y_diff - half_y)
+      distance = self._polar_radius * size / 2
+      x, y = polarToRect(distance, angle + self._polar_angle)
+      canvas.create_image(center_x + x, center_y + y, image=image_drawn)
 
 
 class AtlasFrame(ttk.Frame):
@@ -132,10 +162,10 @@ class LeftFrame(ttk.Frame):
     self._custom_atlas = ttk.Labelframe(self, text='Custom Motifs')
 
     primitives = discover_primitives(PRIMITIVE_PATH)
-    self._builtin_atlas_frame = AtlasFrame(self._builtin_atlas, columns=8, primitives=primitives)
+    self._builtin_atlas_frame = AtlasFrame(self._builtin_atlas, columns=4, primitives=primitives)
     self._builtin_atlas_frame.grid(row=0, column=0, sticky='nswe')
 
-    self._custom_atlas_frame = AtlasFrame(self._custom_atlas, columns=8)
+    self._custom_atlas_frame = AtlasFrame(self._custom_atlas, columns=4)
     self._custom_atlas_frame.grid(row=1, column=0, sticky='nswe')
 
     self._builtin_atlas.grid(row=0, column=0, sticky='nswe')
@@ -222,13 +252,6 @@ class AtlasFrame2(ttk.LabelFrame):
     self.next_position += 1
 
 
-def discover_primitives(dirpath):
-  primitive_paths = [f'{dirpath}/{path}' for path in glob.glob('*.png', root_dir=dirpath)]
-  primitive_paths.sort()
-  primitives = [Primitive(path) for path in primitive_paths]
-  return primitives
-
-
 def test():
   root = tkinter.Tk()
 
@@ -255,6 +278,65 @@ def test():
 
   root.rowconfigure(0, weight=1)
   root.columnconfigure(0, weight=1)
+
+  order = 8
+
+  mandala_canvas.update_idletasks()
+  grid = MandalaGrid(order=order)
+  grid.draw_on(mandala_canvas._canvas, width=800, height=800)
+
+  primitives = discover_primitives(PRIMITIVE_PATH)
+
+  circle = primitives[0]
+  eye = primitives[16]
+  butterfly = primitives[79]
+
+  mandala_layers = []
+
+  mandala_layers.append(MandalaLayer(primitive=circle, order=order, polar_radius=0, polar_angle=0, self_rotation=0, size=0.25, multiplicity=0))
+  mandala_layers[0].draw_on(mandala_canvas._canvas, width=800, height=800)
+
+  mandala_layers.append(MandalaLayer(primitive=eye, order=order, polar_radius=0.1, polar_angle=0, self_rotation=0, size=0.2, multiplicity=1))
+  mandala_layers[1].draw_on(mandala_canvas._canvas, width=800, height=800)
+
+  mandala_layers.append(MandalaLayer(primitive=circle, order=order, polar_radius=0.2, polar_angle=0, self_rotation=0, size=0.2, multiplicity=2))
+  mandala_layers[2].draw_on(mandala_canvas._canvas, width=800, height=800)
+
+  mandala_layers.append(MandalaLayer(primitive=circle, order=order, polar_radius=0.25, polar_angle=0, self_rotation=0, size=0.2, multiplicity=2))
+  mandala_layers[3].draw_on(mandala_canvas._canvas, width=800, height=800)
+
+  mandala_layers.append(MandalaLayer(primitive=circle, order=order, polar_radius=0.3, polar_angle=0, self_rotation=0, size=0.2, multiplicity=2))
+  mandala_layers[4].draw_on(mandala_canvas._canvas, width=800, height=800)
+
+  mandala_layers.append(MandalaLayer(primitive=circle, order=order, polar_radius=0.35, polar_angle=0, self_rotation=0, size=0.2, multiplicity=1))
+  mandala_layers[5].draw_on(mandala_canvas._canvas, width=800, height=800)
+
+  mandala_layers.append(MandalaLayer(primitive=circle, order=order, polar_radius=1, polar_angle=0, self_rotation=0, size=0.5, multiplicity=2))
+  mandala_layers[6].draw_on(mandala_canvas._canvas, width=800, height=800)
+
+  mandala_layers.append(MandalaLayer(primitive=circle, order=order, polar_radius=0.9, polar_angle=0, self_rotation=0, size=0.5, multiplicity=2))
+  mandala_layers[7].draw_on(mandala_canvas._canvas, width=800, height=800)
+
+  mandala_layers.append(MandalaLayer(primitive=circle, order=order, polar_radius=0.8, polar_angle=0, self_rotation=0, size=0.5, multiplicity=2))
+  mandala_layers[8].draw_on(mandala_canvas._canvas, width=800, height=800)
+
+  mandala_layers.append(MandalaLayer(primitive=butterfly, order=order, polar_radius=0.4, polar_angle=11.5, self_rotation=45, size=0.05, multiplicity=2))
+  mandala_layers[9].draw_on(mandala_canvas._canvas, width=800, height=800)
+
+  mandala_layers.append(MandalaLayer(primitive=butterfly, order=order, polar_radius=0.45, polar_angle=16.5, self_rotation=45, size=0.05, multiplicity=2))
+  mandala_layers[10].draw_on(mandala_canvas._canvas, width=800, height=800)
+
+  mandala_layers.append(MandalaLayer(primitive=butterfly, order=order, polar_radius=0.5, polar_angle=21.5, self_rotation=45, size=0.05, multiplicity=2))
+  mandala_layers[11].draw_on(mandala_canvas._canvas, width=800, height=800)
+
+  mandala_layers.append(MandalaLayer(primitive=butterfly, order=order, polar_radius=0.6, polar_angle=-11.5, self_rotation=-45, size=0.05, multiplicity=2))
+  mandala_layers[12].draw_on(mandala_canvas._canvas, width=800, height=800)
+
+  mandala_layers.append(MandalaLayer(primitive=butterfly, order=order, polar_radius=0.65, polar_angle=-16.5, self_rotation=-45, size=0.05, multiplicity=2))
+  mandala_layers[13].draw_on(mandala_canvas._canvas, width=800, height=800)
+
+  mandala_layers.append(MandalaLayer(primitive=butterfly, order=order, polar_radius=0.7, polar_angle=-21.5, self_rotation=-45, size=0.05, multiplicity=2))
+  mandala_layers[14].draw_on(mandala_canvas._canvas, width=800, height=800)
 
   root.mainloop()
 
